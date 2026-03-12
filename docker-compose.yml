@@ -1,0 +1,13 @@
+services:
+  migrate-notification-log-errors:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification-log-errors-migration
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    network_mode: host
+    command: ["python", "migrate_notification_log_errors.py"]
