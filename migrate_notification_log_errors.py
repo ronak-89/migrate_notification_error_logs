@@ -9,9 +9,9 @@ checkpoint: on failure or SIGINT/SIGTERM, re-run to continue from last batch.
   python migrate_notification_log_errors.py
 
 Options:
-  --dry-run     Only count rows that would be moved; do not migrate; no checkpoint.
-  --batch-size  Number of rows per batch (default 50000).
-  --reason-only Match by reason only, any status 1/2/3 (default).
+  --dry-run      Only count rows that would be moved; do not migrate; no checkpoint.
+  --batch-size   Number of rows per batch (default 50000 or BATCH_SIZE env).
+  --reason-only  Match by reason only, any status 1/2/3 (default).
   --all-failures Move all status=2 rows regardless of reason.
 """
 import argparse
@@ -19,6 +19,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from typing import Optional
 
 # Script dir on path for utils
@@ -186,10 +187,21 @@ def main():
         help="Move all status=2 rows; default is match by reason only (any status)",
     )
     args = parser.parse_args()
-    batch_size = args.batch_size if args.batch_size is not None else int(os.getenv("BATCH_SIZE", str(BATCH_SIZE_DEFAULT)))
+    if args.batch_size is not None:
+        batch_size = args.batch_size
+    else:
+        batch_size = int(os.getenv("BATCH_SIZE", str(BATCH_SIZE_DEFAULT)))
+
+    sleep_between_batches = float(os.getenv("SLEEP_BETWEEN_BATCHES", "2") or "2")
+
     reason_only = not args.all_failures
 
-    logger.info("Starting migration script (reason_only=%s, batch_size=%s)", reason_only, batch_size)
+    logger.info(
+        "Starting migration script (reason_only=%s, batch_size=%s, sleep_between_batches=%s)",
+        reason_only,
+        batch_size,
+        sleep_between_batches,
+    )
 
     with get_db_connection() as conn:
         total = count_eligible(conn, reason_only)
@@ -256,6 +268,9 @@ def main():
                 if _shutdown_requested:
                     logger.info("Checkpoint saved; exiting")
                     break
+                if sleep_between_batches > 0 and not _shutdown_requested:
+                    logger.info("Sleeping for %s seconds before next batch", sleep_between_batches)
+                    time.sleep(sleep_between_batches)
     finally:
         close_checkpoint_client()
 
